@@ -27,6 +27,11 @@ Each file is identical to the one in
 on Hugging Face at commit `1ab9323565ddb038682214b292f588070a538ce2`, where sherpa-onnx publishes its
 exports. To check one, download it from there by that commit and compare the SHA-256.
 
+The archive is made by [`.github/workflows/publish.yml`](.github/workflows/publish.yml), run by hand:
+it downloads each file from Hugging Face by that commit, checks it against
+[`files.sha256`](files.sha256), packs the files with [`archive/README.txt`](archive/README.txt) and
+publishes the result. It never replaces a release that exists.
+
 ## Credits and license
 
 The model weights are NVIDIA's, licensed under the

@@ -1,0 +1,69 @@
+name: Publish the model
+
+# Builds parakeet-tdt-0.6b-v2-int8.tar.bz2 from sherpa-onnx's August 2025 export on
+# Hugging Face (by commit, so the files can't change), checks every file against
+# files.sha256, packs them with archive/README.txt and publishes the result as a
+# release. It runs only by hand: Actions > Publish the model > Run workflow. An
+# existing release is never replaced.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  HF: https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8/resolve/1ab9323565ddb038682214b292f588070a538ce2
+  TAG: parakeet-v2-int8-2025-08
+  DIR: sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8
+  ARCHIVE: parakeet-tdt-0.6b-v2-int8.tar.bz2
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Stop if it's published already
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "::error::The release $TAG exists already, and this never replaces it."
+            exit 1
+          fi
+
+      - name: Get the files from Hugging Face and check them
+        run: |
+          set -euo pipefail
+          mkdir -p "$DIR/test_wavs"
+          while read -r sum name; do
+            curl -L --fail --retry 3 --silent --show-error -o "$DIR/$name" "$HF/$name"
+            echo "$sum  $DIR/$name" | sha256sum -c -
+          done < files.sha256
+          cp archive/README.txt "$DIR/README.txt"
+
+      - name: Pack
+        run: |
+          set -euo pipefail
+          tar --version | head -1
+          bzip2 --help 2>&1 | head -1
+          tar --sort=name --owner=0 --group=0 --numeric-owner --mode='u=rw,go=r,a+X' \
+            --mtime='2025-08-16 00:00:00Z' -cf - "$DIR" | bzip2 -9 > "$ARCHIVE"
+          tar -tvjf "$ARCHIVE"
+          stat -c '%s bytes' "$ARCHIVE"
+          sha256sum "$ARCHIVE"
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          size=$(stat -c %s "$ARCHIVE")
+          sum=$(sha256sum "$ARCHIVE" | cut -d' ' -f1)
+          printf '%s\n\n%s\n' \
+            "NVIDIA's Parakeet TDT 0.6B v2 speech model (CC BY 4.0), in sherpa-onnx's int8 ONNX export from August 2025 (Hugging Face commit 1ab9323565ddb038682214b292f588070a538ce2), unchanged." \
+            "$ARCHIVE: $size bytes, SHA-256 $sum. Built by run $GITHUB_RUN_ID of this workflow; the README lists each file's SHA-256 and the credits." > notes.txt
+          gh release create "$TAG" "$ARCHIVE" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Parakeet TDT 0.6B v2, int8 (August 2025 export)" --notes-file notes.txt
+          echo "Published $ARCHIVE ($size bytes, SHA-256 $sum)" >> "$GITHUB_STEP_SUMMARY"
